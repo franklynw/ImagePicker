@@ -1,0 +1,10 @@
+/* 
+  Localizable.strings
+
+  Created by Franklyn Weber on 15/01/2021.
+  
+*/
+
+"ImagePickerError_noSelf" = "Something went wrong, but we're not sure what";
+"ImagePickerError_noImage" = "The camera failed to provide an image";
+"ImagePickerError_cancelled" = "Cancelled";
