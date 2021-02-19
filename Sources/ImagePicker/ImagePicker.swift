@@ -7,25 +7,22 @@
 import SwiftUI
 
 
-public struct ImagePicker<T: Identifiable>: UIViewControllerRepresentable {
+public struct ImagePicker<T>: UIViewControllerRepresentable {
     
     @Binding private var selectedImage: Result<UIImage, ImagePickerError>?
     @Binding private var item: T?
     
-    private let camera: Camera<T>
+    private let sourceType: UIImagePickerController.SourceType
     
     
     public init(item: Binding<T?>, sourceType: UIImagePickerController.SourceType, selectedImage: Binding<Result<UIImage, ImagePickerError>?>) {
         _item = item
         _selectedImage = selectedImage
-        camera = Camera(item: _item, sourceType: sourceType, selectedImage: _selectedImage)
+        self.sourceType = sourceType
     }
-        
     
     public func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = camera.picker
-        picker.delegate = context.coordinator
-        return picker
+        return context.coordinator.imagePickerController
     }
 
     public func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {
@@ -33,35 +30,88 @@ public struct ImagePicker<T: Identifiable>: UIViewControllerRepresentable {
     }
 
     public func makeCoordinator() -> Coordinator {
-        return Coordinator(picker: self)
+        return Coordinator(parent: self)
     }
     
     public class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
 
-        private let picker: ImagePicker
+        let imagePickerController = UIImagePickerController()
+        
+        private let parent: ImagePicker
+        
 
-        init(picker: ImagePicker) {
-            self.picker = picker
+        init(parent: ImagePicker) {
+            
+            self.parent = parent
+            
+            super.init()
+            
+            imagePickerController.sourceType = parent.sourceType
+            imagePickerController.delegate = self
+            
+            if parent.sourceType == .camera {
+                
+                let screenSize = UIScreen.main.bounds.size
+                let cameraAspectRatio = CGFloat(4) / 3
+                let cameraHeight = screenSize.width * cameraAspectRatio
+                let scale = screenSize.height / cameraHeight
+                let offset = (screenSize.height - cameraHeight) / 2
+                
+                let scaleTransform = CGAffineTransform(scaleX: 1, y: scale)
+                let translateTransform = CGAffineTransform(translationX: 0, y: offset)
+                let transform = scaleTransform.concatenating(translateTransform)
+                
+                imagePickerController.cameraViewTransform = transform
+                imagePickerController.cameraOverlayView = CameraOverlayView(frame: imagePickerController.view.frame,
+                                                                            item: parent._item,
+                                                                            cycleFlash: { [weak self] in
+                                                                                self?.imagePickerController.cameraFlashMode.cycle()
+                                                                                return self?.imagePickerController.cameraFlashMode ?? .off
+                                                                            }, capture: {
+                                                                                self.imagePickerController.takePicture()
+                                                                            }, done: parent._selectedImage
+                )
+                imagePickerController.cameraFlashMode = .off
+                imagePickerController.showsCameraControls = false
+            }
         }
         
         public func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
             
             guard let selectedImage = info[.originalImage] as? UIImage else {
-                self.picker.selectedImage = .failure(.noImage)
+                self.parent.selectedImage = .failure(.noImage)
                 return
             }
             guard picker.sourceType == .camera else {
-                self.picker.selectedImage = .success(selectedImage)
-                self.picker.item = nil
+                self.parent.selectedImage = .success(selectedImage)
+                self.parent.item = nil
                 return
             }
             
-            self.picker.camera.editImage(selectedImage)
+            var editingOverlay: EditingOverlayView!
+            
+            editingOverlay = EditingOverlayView(frame: picker.view.frame, item: parent._item, initialImage: selectedImage, retake: {
+                
+                UIView.animate(withDuration: 0.3) {
+                    editingOverlay.alpha = 0
+                } completion: { _ in
+                    editingOverlay.removeFromSuperview()
+                }
+                
+            }, done: parent._selectedImage)
+            
+            editingOverlay.alpha = 0
+            
+            picker.cameraOverlayView?.addSubview(editingOverlay)
+            
+            UIView.animate(withDuration: 0.3) {
+                editingOverlay.alpha = 1
+            }
         }
         
         public func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            self.picker.selectedImage = .failure(.cancelled)
-            self.picker.item = nil
+            self.parent.selectedImage = .failure(.cancelled)
+            self.parent.item = nil
         }
     }
 }

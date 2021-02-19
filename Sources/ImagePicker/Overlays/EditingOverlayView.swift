@@ -8,7 +8,7 @@
 import SwiftUI
 
 
-class EditingOverlayView<T: Identifiable>: UIView {
+final class EditingOverlayView: UIView {
     
     private let diameter: CGFloat = 35
     private let minBoxSize: CGFloat = 100
@@ -29,7 +29,7 @@ class EditingOverlayView<T: Identifiable>: UIView {
     }
     
     
-    init(frame: CGRect, item: Binding<T?>, initialImage: UIImage, retake: @escaping () -> (), done: Binding<Result<UIImage, ImagePickerError>?>) {
+    init<T>(frame: CGRect, item: Binding<T?>, initialImage: UIImage, retake: @escaping () -> (), done: Binding<Result<UIImage, ImagePickerError>?>) {
         
         super.init(frame: frame)
         
@@ -178,7 +178,7 @@ class EditingOverlayView<T: Identifiable>: UIView {
     }
     
     @objc
-    func rotate(_ gestureRecognizer: UIRotationGestureRecognizer) {
+    private func rotate(_ gestureRecognizer: UIRotationGestureRecognizer) {
         
         let rotation = gestureRecognizer.rotation
         
