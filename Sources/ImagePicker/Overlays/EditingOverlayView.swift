@@ -14,11 +14,14 @@ class EditingOverlayView<T: Identifiable>: UIView {
     private let minBoxSize: CGFloat = 100
     private var boxInsets = UIEdgeInsets(top: 90, left: 40, bottom: 40, right: 40)
     
+    private var imageView: UIImageView!
     private var move: Move?
     private var maskLayer: MaskLayer!
     private var boxLayer: BoxLayer!
     private var topLeftCircle: UIImageView!
     private var bottomRightCircle: UIImageView!
+    
+    private var rotation: CGFloat = 0
     
     enum Move {
         case topLeft(CGSize)
@@ -34,6 +37,8 @@ class EditingOverlayView<T: Identifiable>: UIView {
         let imageView = UIImageView(image: correctedImage)
         addSubview(imageView)
         imageView.pinEdgesToSuperView()
+        
+        self.imageView = imageView
         
         let boxSize = CGSize(width: frame.width - boxInsets.left - boxInsets.right, height: frame.height - boxInsets.top - boxInsets.bottom)
         
@@ -70,6 +75,9 @@ class EditingOverlayView<T: Identifiable>: UIView {
         let dragGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(dragged(_:)))
         interactionView.addGestureRecognizer(dragGestureRecognizer)
         
+//        let rotationGestureRecognizer = UIRotationGestureRecognizer(target: self, action: #selector(rotate(_:)))
+//        interactionView.addGestureRecognizer(rotationGestureRecognizer)
+        
         let closeButton = Overlays.addTopButton(to: interactionView, with: UIImage(systemName: "xmark.circle.fill"), diameter: diameter, action: {
             done.wrappedValue = .failure(.cancelled)
             item.wrappedValue = nil
@@ -87,6 +95,10 @@ class EditingOverlayView<T: Identifiable>: UIView {
             }
             
             let croppedImage = self.processImage(correctedImage)
+            
+//            let imageView = UIImageView(image: croppedImage.scaled(to: 0.05))
+//            interactionView.addSubview(imageView)
+//            imageView.center = CGPoint(x: frame.width / 2, y: frame.height / 2)
             
             done.wrappedValue = .success(croppedImage)
             item.wrappedValue = nil
@@ -162,6 +174,25 @@ class EditingOverlayView<T: Identifiable>: UIView {
             
         default:
             move = nil
+        }
+    }
+    
+    @objc
+    func rotate(_ gestureRecognizer: UIRotationGestureRecognizer) {
+        
+        let rotation = gestureRecognizer.rotation
+        
+        switch gestureRecognizer.state {
+        case .began:
+            break
+        case .changed:
+            
+            let rotateTransform = CGAffineTransform(rotationAngle: rotation + self.rotation)
+            
+            imageView.transform = rotateTransform
+            
+        default:
+            self.rotation += rotation
         }
     }
     

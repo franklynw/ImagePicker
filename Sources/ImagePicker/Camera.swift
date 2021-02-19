@@ -8,7 +8,7 @@
 import SwiftUI
 
 
-class Camera<T: Identifiable>: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+class Camera<T: Identifiable>: NSObject {
 
     @Binding private var selectedImage: Result<UIImage, ImagePickerError>?
     @Binding private var item: T?
@@ -26,7 +26,6 @@ class Camera<T: Identifiable>: NSObject, UIImagePickerControllerDelegate, UINavi
         super.init()
         
         picker.sourceType = sourceType
-        picker.delegate = self
         
         if sourceType == .camera {
             
@@ -59,16 +58,11 @@ class Camera<T: Identifiable>: NSObject, UIImagePickerControllerDelegate, UINavi
         fatalError("init(coder:) has not been implemented")
     }
     
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-        
-        guard let selectedImage = info[.originalImage] as? UIImage else {
-            self.selectedImage = .failure(.noImage)
-            return
-        }
+    func editImage(_ image: UIImage) {
         
         var editingOverlay: EditingOverlayView<T>!
         
-        editingOverlay = EditingOverlayView(frame: picker.view.frame, item: _item, initialImage: selectedImage, retake: {
+        editingOverlay = EditingOverlayView(frame: picker.view.frame, item: _item, initialImage: image, retake: {
             
             UIView.animate(withDuration: 0.3) {
                 editingOverlay.alpha = 0
@@ -85,10 +79,5 @@ class Camera<T: Identifiable>: NSObject, UIImagePickerControllerDelegate, UINavi
         UIView.animate(withDuration: 0.3) {
             editingOverlay.alpha = 1
         }
-    }
-    
-    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        selectedImage = .failure(.cancelled)
-        item = nil
     }
 }

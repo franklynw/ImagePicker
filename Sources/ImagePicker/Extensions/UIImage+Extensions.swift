@@ -25,7 +25,7 @@ extension UIImage {
             
             // we have no idea whether to rotate cw or ccw so just do 90 degrees
             
-            return image.rotated(by: 90)
+            return image.rotated(by: .pi / 2)
         }
         
         if imageOrientation == .up {
@@ -100,7 +100,7 @@ extension UIImage {
         return rotatedIfNecessary(correctedImage)
     }
     
-    func rotated(by degrees: CGFloat) -> UIImage {
+    func rotated(by radians: CGFloat) -> UIImage {
         
         guard let orientation = CGImagePropertyOrientation(rawValue: UInt32(imageOrientation.rawValue)) else {
             return self
@@ -109,7 +109,7 @@ extension UIImage {
             return self
         }
         
-        let rotation = CGAffineTransform(rotationAngle: degrees * .pi / 180)
+        let rotation = CGAffineTransform(rotationAngle: radians)
         let output = image.transformed(by: rotation)
         
         guard let cgImage = CIContext().createCGImage(output, from: output.extent) else {
@@ -117,6 +117,20 @@ extension UIImage {
         }
         
         return UIImage(cgImage: cgImage)
+    }
+    
+    func scaled(to scale: CGFloat) -> UIImage {
+        
+        let scaledSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let scaledRect = CGRect(origin: .zero, size: scaledSize)
+        
+        UIGraphicsBeginImageContextWithOptions(scaledRect.size, false, self.scale)
+        draw(in: scaledRect)
+        
+        let scaledImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        
+        return scaledImage ?? self
     }
     
     func cropped(with insets: UIEdgeInsets) -> UIImage {
