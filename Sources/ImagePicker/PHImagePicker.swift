@@ -12,6 +12,7 @@ import PhotosUI
 public enum PHImagePickerResult {
     case processing
     case selection([UIImage])
+    case partialSuccess([UIImage], error: String)
     case cancelled
 }
 
@@ -80,6 +81,12 @@ public struct PHImagePicker<T>: UIViewControllerRepresentable {
             imagePickerController.delegate = self
         }
         
+        fileprivate struct ImageInfo {
+            let image: UIImage
+            let id: Int
+            let degraded: Bool
+        }
+        
         public func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             
             let assetIdentifiers = results.compactMap { $0.assetIdentifier }
@@ -94,27 +101,50 @@ public struct PHImagePicker<T>: UIViewControllerRepresentable {
             
             parent.selectedImages = .processing
             
-            let group = DispatchGroup()
-            var images = [UIImage]()
+            var imageResults = [ImageInfo]()
+            var importError: String?
             
             (0..<count).forEach { index in
                 
                 let asset = assets.object(at: index)
                 
-                group.enter()
+                let options = PHImageRequestOptions()
+                options.isSynchronous = true
+                options.isNetworkAccessAllowed = true
                 
-                PHImageManager.default().requestImage(for: asset, targetSize: parent.targetSize, contentMode: .aspectFit, options: nil) { image, info in
-                    if info?[PHImageResultIsDegradedKey] as? Int == 0, let image = image {
-                        images.append(image)
-                        group.leave()
+                PHImageManager.default().requestImage(for: asset, targetSize: parent.targetSize, contentMode: .aspectFit, options: options) { image, info in
+                    if let info = info, let id = info[PHImageResultRequestIDKey] as? Int {
+                        if let image = image {
+                            let degraded = info[PHImageResultIsDegradedKey] as? Int == 1
+                            imageResults.append(.init(image: image, id: id, degraded: degraded))
+                        } else {
+                            importError = info[PHImageErrorKey] as? String ?? "Unknown error"
+                        }
                     }
                 }
             }
             
-            group.notify(queue: DispatchQueue.main) {
-                self.parent.selectedImages = .selection(images)
-                self.parent.active = nil
+            let highQualityResults = imageResults.reduce(into: [ImageInfo]()) { result, imageResult in
+                if !result.contains(where: { $0.id == imageResult.id }) {
+                    if imageResult.degraded {
+                        if let hqVersion = imageResults.first(where: { $0.id == imageResult.id && !$0.degraded }) {
+                            result.append(hqVersion)
+                        } else {
+                            result.append(imageResult)
+                        }
+                    } else {
+                        result.append(imageResult)
+                    }
+                }
             }
+            
+            if let importError = importError {
+                self.parent.selectedImages = .partialSuccess(highQualityResults.map { $0.image }, error: importError)
+            } else {
+                self.parent.selectedImages = .selection(highQualityResults.map { $0.image })
+            }
+            
+            self.parent.active = nil
         }
     }
 }
