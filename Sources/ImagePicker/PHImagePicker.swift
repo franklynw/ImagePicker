@@ -91,60 +91,18 @@ public struct PHImagePicker<T>: UIViewControllerRepresentable {
             
             let assetIdentifiers = results.compactMap { $0.assetIdentifier }
             let assets = PHAsset.fetchAssets(withLocalIdentifiers: assetIdentifiers, options: nil)
-            let count = assets.count
             
-            guard count > 0 else {
-                parent.selectedImages = .cancelled
-                parent.active = nil
-                return
-            }
-            
-            parent.selectedImages = .processing
-            
-            var imageResults = [ImageInfo]()
-            var importError: String?
-            
-            (0..<count).forEach { index in
+            PHFetchResultProcessor.process(assets, targetSize: parent.targetSize) { [weak self] result in
                 
-                let asset = assets.object(at: index)
+                self?.parent.selectedImages = result
                 
-                let options = PHImageRequestOptions()
-                options.isSynchronous = true
-                options.isNetworkAccessAllowed = true
-                
-                PHImageManager.default().requestImage(for: asset, targetSize: parent.targetSize, contentMode: .aspectFit, options: options) { image, info in
-                    if let info = info, let id = info[PHImageResultRequestIDKey] as? Int {
-                        if let image = image {
-                            let degraded = info[PHImageResultIsDegradedKey] as? Int == 1
-                            imageResults.append(.init(image: image, id: id, degraded: degraded))
-                        } else {
-                            importError = info[PHImageErrorKey] as? String ?? "Unknown error"
-                        }
-                    }
+                switch result {
+                case .processing:
+                    break
+                case .selection, .partialSuccess, .cancelled:
+                    self?.parent.active = nil
                 }
             }
-            
-            let highQualityResults = imageResults.reduce(into: [ImageInfo]()) { result, imageResult in
-                if !result.contains(where: { $0.id == imageResult.id }) {
-                    if imageResult.degraded {
-                        if let hqVersion = imageResults.first(where: { $0.id == imageResult.id && !$0.degraded }) {
-                            result.append(hqVersion)
-                        } else {
-                            result.append(imageResult)
-                        }
-                    } else {
-                        result.append(imageResult)
-                    }
-                }
-            }
-            
-            if let importError = importError {
-                self.parent.selectedImages = .partialSuccess(highQualityResults.map { $0.image }, error: importError)
-            } else {
-                self.parent.selectedImages = .selection(highQualityResults.map { $0.image })
-            }
-            
-            self.parent.active = nil
         }
     }
 }
