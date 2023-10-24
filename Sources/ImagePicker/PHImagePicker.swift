@@ -11,8 +11,8 @@ import PhotosUI
 
 public enum PHImagePickerResult {
     case processing
-    case selection([UIImage])
-    case partialSuccess([UIImage], error: String)
+    case selection([PHImage])
+    case partialSuccess([PHImage], error: String)
     case cancelled
 }
 
@@ -94,12 +94,11 @@ public struct PHImagePicker<T>: UIViewControllerRepresentable {
             
             PHFetchResultProcessor.process(assets, targetSize: parent.targetSize) { [weak self] result in
                 
-                self?.parent.selectedImages = result
-                
                 switch result {
                 case .processing:
                     break
                 case .selection, .partialSuccess, .cancelled:
+                    self?.parent.selectedImages = result
                     self?.parent.active = nil
                 }
             }

@@ -29,7 +29,7 @@ final class EditingOverlayView: UIView {
     }
     
     
-    init<T>(frame: CGRect, item: Binding<T?>, initialImage: UIImage, retake: @escaping () -> (), done: Binding<Result<UIImage, ImagePickerError>?>) {
+    init<T>(frame: CGRect, item: Binding<T?>, initialImage: UIImage, retake: @escaping () -> (), done: Binding<Result<PHImage, ImagePickerError>?>) {
         
         super.init(frame: frame)
         
@@ -100,7 +100,7 @@ final class EditingOverlayView: UIView {
 //            interactionView.addSubview(imageView)
 //            imageView.center = CGPoint(x: frame.width / 2, y: frame.height / 2)
             
-            done.wrappedValue = .success(croppedImage)
+            done.wrappedValue = .success(.init(image: croppedImage, metadata: .init(location: nil, creationDate: nil)))
             item.wrappedValue = nil
         }) {
             $0.trailingAnchor.constraint(equalTo: interactionView.trailingAnchor, constant: -20).isActive = true

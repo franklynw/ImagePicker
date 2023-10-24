@@ -9,13 +9,13 @@ import SwiftUI
 
 public struct ImagePicker<T>: UIViewControllerRepresentable {
     
-    @Binding private var selectedImage: Result<UIImage, ImagePickerError>?
+    @Binding private var selectedImage: Result<PHImage, ImagePickerError>?
     @Binding private var item: T?
     
     private let sourceType: UIImagePickerController.SourceType
     
     
-    public init(item: Binding<T?>, sourceType: UIImagePickerController.SourceType, selectedImage: Binding<Result<UIImage, ImagePickerError>?>) {
+    public init(item: Binding<T?>, sourceType: UIImagePickerController.SourceType, selectedImage: Binding<Result<PHImage, ImagePickerError>?>) {
         _item = item
         _selectedImage = selectedImage
         self.sourceType = sourceType
@@ -83,7 +83,8 @@ public struct ImagePicker<T>: UIViewControllerRepresentable {
                 return
             }
             guard picker.sourceType == .camera else {
-                self.parent.selectedImage = .success(selectedImage)
+                // TODO: get image metadata
+                self.parent.selectedImage = .success(.init(image: selectedImage, metadata: .init(location: nil, creationDate: nil)))
                 self.parent.item = nil
                 return
             }

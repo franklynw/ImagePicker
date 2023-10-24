@@ -14,7 +14,7 @@ final class CameraOverlayView: UIView {
     private let takePhotoButtonDiameter: CGFloat = 70
     
     
-    init<T>(frame: CGRect, item: Binding<T?>, cycleFlash: @escaping () -> (UIImagePickerController.CameraFlashMode), capture: @escaping () -> (), done: Binding<Result<UIImage, ImagePickerError>?>) {
+    init<T>(frame: CGRect, item: Binding<T?>, cycleFlash: @escaping () -> (UIImagePickerController.CameraFlashMode), capture: @escaping () -> (), done: Binding<Result<PHImage, ImagePickerError>?>) {
         
         super.init(frame: frame)
         
