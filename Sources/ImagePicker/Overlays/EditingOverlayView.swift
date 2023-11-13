@@ -27,21 +27,28 @@ final class EditingOverlayView: UIView {
     
     private var rotation: CGFloat = 0
     private var scale: CGFloat = 1
+    private var translate: CGSize = .zero
     
     private var rotateTransform: CGAffineTransform = .init(rotationAngle: 0) {
         didSet {
-            imageView.transform = rotateTransform.concatenating(scaleTransform)
+            imageView.transform = rotateTransform.concatenating(scaleTransform).concatenating(translateTransform)
         }
     }
     private var scaleTransform: CGAffineTransform = .init(scaleX: 1, y: 1) {
         didSet {
-            imageView.transform = rotateTransform.concatenating(scaleTransform)
+            imageView.transform = rotateTransform.concatenating(scaleTransform).concatenating(translateTransform)
+        }
+    }
+    private var translateTransform: CGAffineTransform = .init(translationX: 0, y: 0) {
+        didSet {
+            imageView.transform = rotateTransform.concatenating(scaleTransform).concatenating(translateTransform)
         }
     }
     
     enum Move {
         case topLeft(CGSize)
         case bottomRight(CGSize)
+        case image
     }
     
     
@@ -128,12 +135,15 @@ final class EditingOverlayView: UIView {
         interactionView.pinEdgesToSuperView()
         
         let dragGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(dragged))
+        dragGestureRecognizer.delegate = self
         interactionView.addGestureRecognizer(dragGestureRecognizer)
         
         let rotationGestureRecognizer = UIRotationGestureRecognizer(target: self, action: #selector(rotate))
+        rotationGestureRecognizer.delegate = self
         interactionView.addGestureRecognizer(rotationGestureRecognizer)
         
         let zoomGestureRecognizer = UIPinchGestureRecognizer(target: self, action: #selector(zoom))
+        zoomGestureRecognizer.delegate = self
         interactionView.addGestureRecognizer(zoomGestureRecognizer)
         
         let closeButton = Overlays.addTopButton(to: interactionView, with: UIImage(systemName: "xmark.circle.fill"), diameter: diameter, action: {
@@ -165,7 +175,7 @@ final class EditingOverlayView: UIView {
             $0.trailingAnchor.constraint(equalTo: interactionView.trailingAnchor, constant: -20).isActive = true
         }
         
-        let resetButton = Overlays.addOtherButton(to: interactionView, with: UIImage(systemName: "arrow.uturn.backward.circle.fill"), diameter: 80) { [weak self] in
+        let resetButton = Overlays.addOtherButton(to: interactionView, with: UIImage(systemName: "arrow.uturn.backward.circle.fill"), diameter: 60) { [weak self] in
             self?.reset()
         }
         resetButton.centerXAnchor.constraint(equalTo: interactionView.centerXAnchor).isActive = true
@@ -188,6 +198,7 @@ final class EditingOverlayView: UIView {
     private func dragged(_ gestureRecognizer: UIPanGestureRecognizer) {
         
         let location = gestureRecognizer.location(in: self)
+        let translate = gestureRecognizer.translation(in: self)
         
         switch gestureRecognizer.state {
         case .began:
@@ -206,7 +217,10 @@ final class EditingOverlayView: UIView {
             if bottomRightBox.contains(location) {
                 let offset = CGSize(width: location.x - bottomRight.x, height: location.y - bottomRight.y)
                 move = .bottomRight(offset)
+                return
             }
+            
+            move = .image
             
         case .changed:
             
@@ -239,6 +253,11 @@ final class EditingOverlayView: UIView {
                 boxLayer.bottomRight = bottomRight
                 bottomRightCircle.center = bottomRight
                 boxInsets.bottomRight = CGPoint(x: frame.width - bottomRight.x, y: frame.height - bottomRight.y)
+                
+            case .image:
+                
+                let actualTranslate = CGSize(width: translate.x + self.translate.width, height: translate.y + self.translate.height)
+                translateTransform = CGAffineTransform(translationX: actualTranslate.width, y: actualTranslate.height)
             }
             
             UIView.animate(withDuration: 0.1) {
@@ -246,6 +265,11 @@ final class EditingOverlayView: UIView {
             }
             
         default:
+            
+            if case .image = move {
+                self.translate = CGSize(width: translate.x + self.translate.width, height: translate.y + self.translate.height)
+            }
+            
             move = nil
         }
     }
@@ -295,10 +319,10 @@ final class EditingOverlayView: UIView {
             
             let ratio = image.size.width / width
             
-            let top = insets.top * ratio + yAdjustment
-            let left = insets.left * ratio + xAdjustment
-            let bottom = insets.bottom * ratio + yAdjustment
-            let right = insets.right * ratio + xAdjustment
+            let top = max(0, (insets.top - self.translate.height) * ratio + yAdjustment)
+            let left = max(0, (insets.left - self.translate.width) * ratio + xAdjustment)
+            let bottom = max(0, (insets.bottom + self.translate.height) * ratio + yAdjustment)
+            let right = max(0, (insets.right + self.translate.width) * ratio + xAdjustment)
             
             let croppedImage = rotatedImage.cropped(with: UIEdgeInsets(top: top, left: left, bottom: bottom, right: right))
             
@@ -313,6 +337,7 @@ final class EditingOverlayView: UIView {
         boxInsets = originalBoxInsets
         rotation = 0
         scale = 1
+        translate = .zero
         
         let topLeft = boxInsets.topLeft
         let bottomRight = boxInsets.bottomRight(in: frame)
@@ -329,9 +354,18 @@ final class EditingOverlayView: UIView {
         UIView.animate(withDuration: 0.5) {
             self.scaleTransform = .init(scaleX: 1, y: 1)
             self.rotateTransform = .init(rotationAngle: 0)
+            self.translateTransform = .init(translationX: 0, y: 0)
             self.topLeftCircle.center = topLeft
             self.bottomRightCircle.center = bottomRight
         }
+    }
+}
+
+
+extension EditingOverlayView: UIGestureRecognizerDelegate {
+    
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        true
     }
 }
 
