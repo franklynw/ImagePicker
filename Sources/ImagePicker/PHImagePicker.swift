@@ -24,10 +24,12 @@ public struct PHImagePicker<T>: UIViewControllerRepresentable {
     private var selectionLimit = 5
     private var targetSize: CGSize = UIScreen.main.bounds.size
     private var authorizationResponse: ((PHAuthorizationStatus) -> ())?
+    private let appeared: (() -> ())?
     
     
-    public init(_ active: Binding<T?>, selectedImages: Binding<PHImagePickerResult?>) {
+    public init(_ active: Binding<T?>, appeared: (() -> ())? = nil, selectedImages: Binding<PHImagePickerResult?>) {
         _active = active
+        self.appeared = appeared
         _selectedImages = selectedImages
     }
     
@@ -79,6 +81,8 @@ public struct PHImagePicker<T>: UIViewControllerRepresentable {
             imagePickerController = PHPickerViewController(configuration: configuration)
             
             imagePickerController.delegate = self
+            
+            parent.appeared?()
         }
         
         fileprivate struct ImageInfo {

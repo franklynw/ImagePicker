@@ -17,12 +17,14 @@ public struct ImagePicker<T>: UIViewControllerRepresentable {
     private var _savesToPhotoLibrary = false
     
     private let sourceType: UIImagePickerController.SourceType
+    private let appeared: (() -> ())?
     
     
-    public init(item: Binding<T?>, sourceType: UIImagePickerController.SourceType, selectedImage: Binding<Result<PHImage, ImagePickerError>?>) {
+    public init(item: Binding<T?>, sourceType: UIImagePickerController.SourceType, appeared: (() -> ())?, selectedImage: Binding<Result<PHImage, ImagePickerError>?>) {
         _item = item
         _selectedImage = selectedImage
         self.sourceType = sourceType
+        self.appeared = appeared
     }
     
     public func makeUIViewController(context: Context) -> UIImagePickerController {
@@ -75,6 +77,8 @@ public struct ImagePicker<T>: UIViewControllerRepresentable {
                 imagePickerController.cameraFlashMode = .off
                 imagePickerController.showsCameraControls = false
             }
+            
+            parent.appeared?()
         }
         
         public func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
