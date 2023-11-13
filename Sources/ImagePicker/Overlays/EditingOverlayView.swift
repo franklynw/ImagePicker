@@ -12,7 +12,8 @@ final class EditingOverlayView: UIView {
     
     private let diameter: CGFloat = 35
     private let minBoxSize: CGFloat = 100
-    private var boxInsets = UIEdgeInsets(top: 90, left: 40, bottom: 40, right: 40)
+    private let aspectRatio: CGFloat
+    private var boxInsets = UIEdgeInsets(top: 40, left: 40, bottom: 40, right: 40)
     
     private var imageView: UIImageView!
     private var move: Move?
@@ -29,16 +30,29 @@ final class EditingOverlayView: UIView {
     }
     
     
-    init<T>(frame: CGRect, item: Binding<T?>, initialImage: UIImage, retake: @escaping () -> (), done: Binding<Result<PHImage, ImagePickerError>?>) {
+    init<T>(frame: CGRect, item: Binding<T?>, initialImage: UIImage, retake: @escaping () -> (), done: @escaping (Result<PHImage, ImagePickerError>) -> ()) {
+        
+        aspectRatio = initialImage.size.height / initialImage.size.width
         
         super.init(frame: frame)
         
         let correctedImage = initialImage.withCorrectedRotation(desiredAspect: .portrait)
         let imageView = UIImageView(image: correctedImage)
+        imageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(imageView)
-        imageView.pinEdgesToSuperView()
+        
+        imageView.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+        imageView.centerXAnchor.constraint(equalTo: centerXAnchor).isActive = true
+        imageView.centerYAnchor.constraint(equalTo: centerYAnchor).isActive = true
+        imageView.heightAnchor.constraint(equalTo: widthAnchor, multiplier: aspectRatio).isActive = true
         
         self.imageView = imageView
+        
+        let imageHeight = frame.width * aspectRatio
+        let imageSize = CGSize(width: frame.width, height: frame.width * aspectRatio)
+        let imageFrame = CGRect(origin: CGPoint(x: 0, y: (frame.height - imageHeight) / 2), size: imageSize)
+        
+        boxInsets = .init(top: imageFrame.minY + boxInsets.top, left: boxInsets.left, bottom: frame.height - imageFrame.maxY + boxInsets.bottom, right: boxInsets.right)
         
         let boxSize = CGSize(width: frame.width - boxInsets.left - boxInsets.right, height: frame.height - boxInsets.top - boxInsets.bottom)
         
@@ -75,11 +89,11 @@ final class EditingOverlayView: UIView {
         let dragGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(dragged(_:)))
         interactionView.addGestureRecognizer(dragGestureRecognizer)
         
-//        let rotationGestureRecognizer = UIRotationGestureRecognizer(target: self, action: #selector(rotate(_:)))
-//        interactionView.addGestureRecognizer(rotationGestureRecognizer)
+        let rotationGestureRecognizer = UIRotationGestureRecognizer(target: self, action: #selector(rotate(_:)))
+        interactionView.addGestureRecognizer(rotationGestureRecognizer)
         
         let closeButton = Overlays.addTopButton(to: interactionView, with: UIImage(systemName: "xmark.circle.fill"), diameter: diameter, action: {
-            done.wrappedValue = .failure(.cancelled)
+            done(.failure(.cancelled))
             item.wrappedValue = nil
         }) {
             $0.leadingAnchor.constraint(equalTo: interactionView.leadingAnchor, constant: 20).isActive = true
@@ -90,17 +104,18 @@ final class EditingOverlayView: UIView {
         Overlays.addTopButton(to: interactionView, with: UIImage(systemName: "checkmark.circle.fill"), diameter: diameter, action: { [weak self] in
             
             guard let self = self else {
-                done.wrappedValue = .failure(.noSelf)
+                done(.failure(.noSelf))
                 return
             }
             
-            let croppedImage = self.processImage(correctedImage)
+            let correctedInsets = UIEdgeInsets(top: self.boxInsets.top - imageFrame.minY, left: self.boxInsets.left, bottom: self.boxInsets.bottom - (frame.height - imageFrame.maxY), right: self.boxInsets.right)
+            let croppedImage = self.processImage(correctedImage, insets: correctedInsets)
             
 //            let imageView = UIImageView(image: croppedImage.scaled(to: 0.05))
 //            interactionView.addSubview(imageView)
 //            imageView.center = CGPoint(x: frame.width / 2, y: frame.height / 2)
             
-            done.wrappedValue = .success(.init(image: croppedImage, metadata: .init(location: nil, creationDate: nil)))
+            done(.success(.init(image: croppedImage, metadata: .init(location: nil, creationDate: nil))))
             item.wrappedValue = nil
         }) {
             $0.trailingAnchor.constraint(equalTo: interactionView.trailingAnchor, constant: -20).isActive = true
@@ -196,18 +211,34 @@ final class EditingOverlayView: UIView {
         }
     }
     
-    private func processImage(_ initialImage: UIImage) -> UIImage {
+    private func processImage(_ image: UIImage, insets: UIEdgeInsets) -> UIImage {
         
-        let imageSize = initialImage.size
-        let ratio = frame.height / imageSize.height
+        let rotatedImage = image.rotated(by: -rotation)
+        
+        let xAdjustment = (rotatedImage.size.width - image.size.width) / 2
+        let yAdjustment = (rotatedImage.size.height - image.size.height) / 2
+        
+        let ratio = image.size.width / frame.size.width
 
-        let top = boxInsets.top / ratio
-        let left = boxInsets.left / ratio
-        let bottom = boxInsets.bottom / ratio
-        let right = boxInsets.right / ratio
+        let top = insets.top * ratio + yAdjustment
+        let left = insets.left * ratio + xAdjustment
+        let bottom = insets.bottom * ratio + yAdjustment
+        let right = insets.right * ratio + xAdjustment
 
-        let croppedImage = initialImage.cropped(with: UIEdgeInsets(top: top, left: left, bottom: bottom, right: right))
+        let croppedImage = rotatedImage.cropped(with: UIEdgeInsets(top: top, left: left, bottom: bottom, right: right))
 
         return croppedImage
+    }
+}
+
+
+extension CGRect {
+    
+    var topLeft: CGPoint {
+        CGPoint(x: minX, y: minY)
+    }
+    
+    var bottomRight: CGPoint {
+        CGPoint(x: maxX, y: maxY)
     }
 }

@@ -5,12 +5,16 @@
 //
 
 import SwiftUI
+import PhotosUI
 
 
 public struct ImagePicker<T>: UIViewControllerRepresentable {
     
     @Binding private var selectedImage: Result<PHImage, ImagePickerError>?
     @Binding private var item: T?
+    
+    private var userLocation: CLLocationCoordinate2D?
+    private var _savesToPhotoLibrary = false
     
     private let sourceType: UIImagePickerController.SourceType
     
@@ -54,14 +58,11 @@ public struct ImagePicker<T>: UIViewControllerRepresentable {
                 let screenSize = UIScreen.main.bounds.size
                 let cameraAspectRatio = CGFloat(4) / 3
                 let cameraHeight = screenSize.width * cameraAspectRatio
-                let scale = screenSize.height / cameraHeight
                 let offset = (screenSize.height - cameraHeight) / 2
                 
-                let scaleTransform = CGAffineTransform(scaleX: 1, y: scale)
                 let translateTransform = CGAffineTransform(translationX: 0, y: offset)
-                let transform = scaleTransform.concatenating(translateTransform)
                 
-                imagePickerController.cameraViewTransform = transform
+                imagePickerController.cameraViewTransform = translateTransform
                 imagePickerController.cameraOverlayView = CameraOverlayView(frame: imagePickerController.view.frame,
                                                                             item: parent._item,
                                                                             cycleFlash: { [weak self] in
@@ -83,7 +84,7 @@ public struct ImagePicker<T>: UIViewControllerRepresentable {
                 return
             }
             guard picker.sourceType == .camera else {
-                // TODO: get image metadata
+                // this will never happen as we're using PHPickerViewController for non-camera functionality
                 self.parent.selectedImage = .success(.init(image: selectedImage, metadata: .init(location: nil, creationDate: nil)))
                 self.parent.item = nil
                 return
@@ -99,7 +100,7 @@ public struct ImagePicker<T>: UIViewControllerRepresentable {
                     editingOverlay.removeFromSuperview()
                 }
                 
-            }, done: parent._selectedImage)
+            }, done: imageFinishedEditing)
             
             editingOverlay.alpha = 0
             
@@ -114,5 +115,50 @@ public struct ImagePicker<T>: UIViewControllerRepresentable {
             self.parent.selectedImage = .failure(.cancelled)
             self.parent.item = nil
         }
+        
+        private func imageFinishedEditing(_ result: Result<PHImage, ImagePickerError>) {
+            switch result {
+            case .success(let phImage):
+                if parent._savesToPhotoLibrary {
+                    saveImageWithMetadata(phImage.image)
+                }
+                let updatedImage = PHImage(image: phImage.image, metadata: .init(location: parent.userLocation, creationDate: Date()))
+                parent.selectedImage = .success(updatedImage)
+            case .failure:
+                parent.selectedImage = result
+            }
+        }
+        
+        private func saveImageWithMetadata(_ image: UIImage) {
+            
+            let location: CLLocation?
+            if let userLocation = parent.userLocation {
+                location = .init(latitude: userLocation.latitude, longitude: userLocation.longitude)
+            } else {
+                location = nil
+            }
+            
+            try? PHPhotoLibrary.shared().performChangesAndWait {
+                let request = PHAssetChangeRequest.creationRequestForAsset(from: image)
+                request.creationDate = Date()
+                request.location = location
+            }
+        }
+    }
+}
+
+
+extension ImagePicker {
+    
+    public func savesToPhotoLibrary(_ savesToPhotoLibrary: Bool) -> Self {
+        var copy = self
+        copy._savesToPhotoLibrary = savesToPhotoLibrary
+        return copy
+    }
+    
+    public func userLocation(_ userLocation: CLLocationCoordinate2D?) -> Self {
+        var copy = self
+        copy.userLocation = userLocation
+        return copy
     }
 }
