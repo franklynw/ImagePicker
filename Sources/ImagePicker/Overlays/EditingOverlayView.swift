@@ -29,19 +29,19 @@ final class EditingOverlayView: UIView {
     private var scale: CGFloat = 1
     private var translate: CGSize = .zero
     
-    private var rotateTransform: CGAffineTransform = .init(rotationAngle: 0) {
+    private var rotateTransform: CGAffineTransform = .identity {
         didSet {
-            imageView.transform = rotateTransform.concatenating(scaleTransform).concatenating(translateTransform)
+            transform()
         }
     }
-    private var scaleTransform: CGAffineTransform = .init(scaleX: 1, y: 1) {
+    private var scaleTransform: CGAffineTransform = .identity {
         didSet {
-            imageView.transform = rotateTransform.concatenating(scaleTransform).concatenating(translateTransform)
+            transform()
         }
     }
-    private var translateTransform: CGAffineTransform = .init(translationX: 0, y: 0) {
+    private var translateTransform: CGAffineTransform = .identity {
         didSet {
-            imageView.transform = rotateTransform.concatenating(scaleTransform).concatenating(translateTransform)
+            transform()
         }
     }
     
@@ -332,6 +332,10 @@ final class EditingOverlayView: UIView {
         }
     }
     
+    private func transform() {
+        imageView.transform = rotateTransform.concatenating(scaleTransform).concatenating(translateTransform)
+    }
+    
     private func reset() {
         
         boxInsets = originalBoxInsets
@@ -342,19 +346,22 @@ final class EditingOverlayView: UIView {
         let topLeft = boxInsets.topLeft
         let bottomRight = boxInsets.bottomRight(in: frame)
         
+        self.maskLayer.topLeft = topLeft
+        self.boxLayer.topLeft = topLeft
+        self.maskLayer.bottomRight = bottomRight
+        self.boxLayer.bottomRight = bottomRight
+        
         UIView.transition(with: self, duration: 0.5, options: .transitionCrossDissolve) {
             self.maskLayer.topLeft = topLeft
             self.boxLayer.topLeft = topLeft
             self.maskLayer.bottomRight = bottomRight
             self.boxLayer.bottomRight = bottomRight
-        } completion: { _ in
-            // nothing
         }
         
-        UIView.animate(withDuration: 0.5) {
-            self.scaleTransform = .init(scaleX: 1, y: 1)
-            self.rotateTransform = .init(rotationAngle: 0)
-            self.translateTransform = .init(translationX: 0, y: 0)
+        UIView.animate(withDuration: 0.4, delay: 0.1) {
+            self.scaleTransform = .identity
+            self.rotateTransform = .identity
+            self.translateTransform = .identity
             self.topLeftCircle.center = topLeft
             self.bottomRightCircle.center = bottomRight
         }
