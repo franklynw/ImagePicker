@@ -13,7 +13,9 @@ final class EditingOverlayView: UIView {
     private let diameter: CGFloat = 35
     private let minBoxSize: CGFloat = 100
     private let aspectRatio: CGFloat
-    private var boxInsets = UIEdgeInsets(top: 40, left: 40, bottom: 40, right: 40)
+    
+    private var originalBoxInsets = UIEdgeInsets(top: 40, left: 40, bottom: 40, right: 40)
+    private var boxInsets: UIEdgeInsets!
     
     private var imageView: UIImageView!
     private var move: Move?
@@ -21,8 +23,21 @@ final class EditingOverlayView: UIView {
     private var boxLayer: BoxLayer!
     private var topLeftCircle: UIImageView!
     private var bottomRightCircle: UIImageView!
+    private var spinner: Spinner!
     
     private var rotation: CGFloat = 0
+    private var scale: CGFloat = 1
+    
+    private var rotateTransform: CGAffineTransform = .init(rotationAngle: 0) {
+        didSet {
+            imageView.transform = rotateTransform.concatenating(scaleTransform)
+        }
+    }
+    private var scaleTransform: CGAffineTransform = .init(scaleX: 1, y: 1) {
+        didSet {
+            imageView.transform = rotateTransform.concatenating(scaleTransform)
+        }
+    }
     
     enum Move {
         case topLeft(CGSize)
@@ -30,14 +45,37 @@ final class EditingOverlayView: UIView {
     }
     
     
-    init<T>(frame: CGRect, item: Binding<T?>, initialImage: UIImage, retake: @escaping () -> (), done: @escaping (Result<PHImage, ImagePickerError>) -> ()) {
+    init<T>(frame: CGRect, item: Binding<T?>, screenImage: UIImage, originalImage: @autoclosure @escaping () -> UIImage, retake: @escaping () -> (), done: @escaping (Result<PHImage, ImagePickerError>) -> ()) {
         
-        aspectRatio = initialImage.size.height / initialImage.size.width
+        aspectRatio = screenImage.size.height / screenImage.size.width
         
         super.init(frame: frame)
         
-        let correctedImage = initialImage.withCorrectedRotation(desiredAspect: .portrait)
-        let imageView = UIImageView(image: correctedImage)
+        let topObscureView = UIView()
+        topObscureView.translatesAutoresizingMaskIntoConstraints = false
+        
+        addSubview(topObscureView)
+        
+        topObscureView.backgroundColor = .black
+        topObscureView.translatesAutoresizingMaskIntoConstraints = false
+        topObscureView.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+        topObscureView.centerXAnchor.constraint(equalTo: centerXAnchor).isActive = true
+        topObscureView.topAnchor.constraint(equalTo: topAnchor).isActive = true
+        topObscureView.heightAnchor.constraint(equalToConstant: 100).isActive = true
+        
+        let bottomObscureView = UIView()
+        bottomObscureView.translatesAutoresizingMaskIntoConstraints = false
+        
+        addSubview(bottomObscureView)
+        
+        bottomObscureView.backgroundColor = .black
+        bottomObscureView.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+        bottomObscureView.centerXAnchor.constraint(equalTo: centerXAnchor).isActive = true
+        bottomObscureView.bottomAnchor.constraint(equalTo: bottomAnchor).isActive = true
+        bottomObscureView.heightAnchor.constraint(equalToConstant: 100).isActive = true
+        
+        
+        let imageView = UIImageView(image: screenImage)
         imageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(imageView)
         
@@ -52,9 +90,12 @@ final class EditingOverlayView: UIView {
         let imageSize = CGSize(width: frame.width, height: frame.width * aspectRatio)
         let imageFrame = CGRect(origin: CGPoint(x: 0, y: (frame.height - imageHeight) / 2), size: imageSize)
         
+        boxInsets = originalBoxInsets
         boxInsets = .init(top: imageFrame.minY + boxInsets.top, left: boxInsets.left, bottom: frame.height - imageFrame.maxY + boxInsets.bottom, right: boxInsets.right)
+        originalBoxInsets = boxInsets
         
         let boxSize = CGSize(width: frame.width - boxInsets.left - boxInsets.right, height: frame.height - boxInsets.top - boxInsets.bottom)
+        
         
         let maskView = UIView()
         maskView.backgroundColor = UIColor.black.withAlphaComponent(0.5)
@@ -86,11 +127,14 @@ final class EditingOverlayView: UIView {
         addSubview(interactionView)
         interactionView.pinEdgesToSuperView()
         
-        let dragGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(dragged(_:)))
+        let dragGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(dragged))
         interactionView.addGestureRecognizer(dragGestureRecognizer)
         
-        let rotationGestureRecognizer = UIRotationGestureRecognizer(target: self, action: #selector(rotate(_:)))
+        let rotationGestureRecognizer = UIRotationGestureRecognizer(target: self, action: #selector(rotate))
         interactionView.addGestureRecognizer(rotationGestureRecognizer)
+        
+        let zoomGestureRecognizer = UIPinchGestureRecognizer(target: self, action: #selector(zoom))
+        interactionView.addGestureRecognizer(zoomGestureRecognizer)
         
         let closeButton = Overlays.addTopButton(to: interactionView, with: UIImage(systemName: "xmark.circle.fill"), diameter: diameter, action: {
             done(.failure(.cancelled))
@@ -108,18 +152,32 @@ final class EditingOverlayView: UIView {
                 return
             }
             
+            self.spinner.startAnimating()
+            self.layoutIfNeeded()
+            
             let correctedInsets = UIEdgeInsets(top: self.boxInsets.top - imageFrame.minY, left: self.boxInsets.left, bottom: self.boxInsets.bottom - (frame.height - imageFrame.maxY), right: self.boxInsets.right)
-            let croppedImage = self.processImage(correctedImage, insets: correctedInsets)
+            self.processImage(originalImage(), insets: correctedInsets) { croppedImage in
+                done(.success(.init(image: croppedImage, metadata: .init(location: nil, creationDate: nil))))
+                item.wrappedValue = nil
+            }
             
-//            let imageView = UIImageView(image: croppedImage.scaled(to: 0.05))
-//            interactionView.addSubview(imageView)
-//            imageView.center = CGPoint(x: frame.width / 2, y: frame.height / 2)
-            
-            done(.success(.init(image: croppedImage, metadata: .init(location: nil, creationDate: nil))))
-            item.wrappedValue = nil
         }) {
             $0.trailingAnchor.constraint(equalTo: interactionView.trailingAnchor, constant: -20).isActive = true
         }
+        
+        let resetButton = Overlays.addOtherButton(to: interactionView, with: UIImage(systemName: "arrow.uturn.backward.circle.fill"), diameter: 80) { [weak self] in
+            self?.reset()
+        }
+        resetButton.centerXAnchor.constraint(equalTo: interactionView.centerXAnchor).isActive = true
+        resetButton.bottomAnchor.constraint(equalTo: interactionView.bottomAnchor, constant: -20).isActive = true
+        
+        let spinner = Spinner()
+        addSubview(spinner)
+        
+        spinner.centerXAnchor.constraint(equalTo: centerXAnchor).isActive = true
+        spinner.centerYAnchor.constraint(equalTo: centerYAnchor).isActive = true
+        
+        self.spinner = spinner
     }
     
     required init?(coder: NSCoder) {
@@ -201,33 +259,79 @@ final class EditingOverlayView: UIView {
         case .began:
             break
         case .changed:
-            
-            let rotateTransform = CGAffineTransform(rotationAngle: rotation + self.rotation)
-            
-            imageView.transform = rotateTransform
-            
+            rotateTransform = CGAffineTransform(rotationAngle: rotation + self.rotation)
         default:
             self.rotation += rotation
         }
     }
     
-    private func processImage(_ image: UIImage, insets: UIEdgeInsets) -> UIImage {
+    @objc
+    private func zoom(_ gestureRecognizer: UIPinchGestureRecognizer) {
         
-        let rotatedImage = image.rotated(by: -rotation)
+        let scale = gestureRecognizer.scale
         
-        let xAdjustment = (rotatedImage.size.width - image.size.width) / 2
-        let yAdjustment = (rotatedImage.size.height - image.size.height) / 2
+        switch gestureRecognizer.state {
+        case .began:
+            break
+        case .changed:
+            let actualScale = self.scale * scale
+            scaleTransform = CGAffineTransform(scaleX: actualScale, y: actualScale)
+        default:
+            self.scale *= scale
+        }
+    }
+    
+    private func processImage(_ image: UIImage, insets: UIEdgeInsets, completion: @escaping (UIImage) -> ()) {
         
-        let ratio = image.size.width / frame.size.width
-
-        let top = insets.top * ratio + yAdjustment
-        let left = insets.left * ratio + xAdjustment
-        let bottom = insets.bottom * ratio + yAdjustment
-        let right = insets.right * ratio + xAdjustment
-
-        let croppedImage = rotatedImage.cropped(with: UIEdgeInsets(top: top, left: left, bottom: bottom, right: right))
-
-        return croppedImage
+        let width = frame.size.width
+        
+        DispatchQueue.global(qos: .background).async {
+            
+            let scaledImage = image.scaled(to: self.scale)
+            let rotatedImage = scaledImage.rotated(by: -self.rotation)
+            
+            let xAdjustment = (rotatedImage.size.width - image.size.width) / 2
+            let yAdjustment = (rotatedImage.size.height - image.size.height) / 2
+            
+            let ratio = image.size.width / width
+            
+            let top = insets.top * ratio + yAdjustment
+            let left = insets.left * ratio + xAdjustment
+            let bottom = insets.bottom * ratio + yAdjustment
+            let right = insets.right * ratio + xAdjustment
+            
+            let croppedImage = rotatedImage.cropped(with: UIEdgeInsets(top: top, left: left, bottom: bottom, right: right))
+            
+            DispatchQueue.main.async {
+                completion(croppedImage)
+            }
+        }
+    }
+    
+    private func reset() {
+        
+        boxInsets = originalBoxInsets
+        rotation = 0
+        scale = 1
+        
+        let topLeft = boxInsets.topLeft
+        let bottomRight = boxInsets.bottomRight(in: frame)
+        
+        UIView.transition(with: self, duration: 0.5, options: .transitionCrossDissolve) {
+            self.maskLayer.topLeft = topLeft
+            self.boxLayer.topLeft = topLeft
+            self.maskLayer.bottomRight = bottomRight
+            self.boxLayer.bottomRight = bottomRight
+        } completion: { _ in
+            // nothing
+        }
+        
+        UIView.animate(withDuration: 0.5) {
+            self.scaleTransform = .init(scaleX: 1, y: 1)
+            self.rotateTransform = .init(rotationAngle: 0)
+            self.topLeftCircle.center = topLeft
+            self.bottomRightCircle.center = bottomRight
+        }
     }
 }
 
@@ -240,5 +344,58 @@ extension CGRect {
     
     var bottomRight: CGPoint {
         CGPoint(x: maxX, y: maxY)
+    }
+}
+
+
+class Spinner: UIView {
+    
+    private var spinner: UIActivityIndicatorView!
+    
+    init() {
+        
+        super.init(frame: .zero)
+        
+        translatesAutoresizingMaskIntoConstraints = false
+        
+        backgroundColor = .black.withAlphaComponent(0.7)
+        layer.cornerRadius = 38
+        widthAnchor.constraint(equalToConstant: 76).isActive = true
+        heightAnchor.constraint(equalToConstant: 76).isActive = true
+        alpha = 0
+        
+        let spinner = UIActivityIndicatorView(style: .large)
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.color = .white
+        spinner.hidesWhenStopped = true
+        
+        addSubview(spinner)
+        
+        spinner.centerXAnchor.constraint(equalTo: centerXAnchor, constant: 1).isActive = true // slightly off-centre
+        spinner.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 1).isActive = true
+        
+        self.spinner = spinner
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    func startAnimating() {
+        
+        UIView.animate(withDuration: 0.3) {
+            self.alpha = 1
+        } completion: { _ in
+            self.spinner.startAnimating()
+        }
+    }
+    
+    func stopAnimating() {
+        
+        UIView.animate(withDuration: 0.3) {
+            self.alpha = 0
+        } completion: { _ in
+            self.spinner.stopAnimating()
+        }
     }
 }

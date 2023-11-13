@@ -90,9 +90,14 @@ public struct ImagePicker<T>: UIViewControllerRepresentable {
                 return
             }
             
+            let screenSize = UIScreen.main.bounds.size
+            let scale = screenSize.width / selectedImage.size.width
+            let correctedImage = selectedImage.withCorrectedRotation(desiredAspect: .portrait)
+            let scaledImage = correctedImage.scaled(to: scale) // an image which is the same width as the screen; we pass the original when any edits are committed
+            
             var editingOverlay: EditingOverlayView!
             
-            editingOverlay = EditingOverlayView(frame: picker.view.frame, item: parent._item, initialImage: selectedImage, retake: {
+            editingOverlay = EditingOverlayView(frame: picker.view.frame, item: parent._item, screenImage: scaledImage, originalImage: correctedImage, retake: {
                 
                 UIView.animate(withDuration: 0.3) {
                     editingOverlay.alpha = 0
