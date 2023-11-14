@@ -44,6 +44,7 @@ public struct ImagePicker<T>: UIViewControllerRepresentable {
         let imagePickerController = UIImagePickerController()
         
         private let parent: ImagePicker
+        private var cameraOverlayView: CameraOverlayView?
         
 
         init(parent: ImagePicker) {
@@ -63,17 +64,22 @@ public struct ImagePicker<T>: UIViewControllerRepresentable {
                 let offset = (screenSize.height - cameraHeight) / 2
                 
                 let translateTransform = CGAffineTransform(translationX: 0, y: offset)
-                
                 imagePickerController.cameraViewTransform = translateTransform
-                imagePickerController.cameraOverlayView = CameraOverlayView(frame: imagePickerController.view.frame,
-                                                                            item: parent._item,
-                                                                            cycleFlash: { [weak self] in
-                                                                                self?.imagePickerController.cameraFlashMode.cycle()
-                                                                                return self?.imagePickerController.cameraFlashMode ?? .off
-                                                                            }, capture: {
-                                                                                self.imagePickerController.takePicture()
-                                                                            }, done: parent._selectedImage
+                
+                let cameraOverlayView = CameraOverlayView(
+                    frame: imagePickerController.view.frame,
+                    item: parent._item,
+                    cycleFlash: { [weak self] in
+                        self?.imagePickerController.cameraFlashMode.cycle()
+                        return self?.imagePickerController.cameraFlashMode ?? .off
+                    }, capture: {
+                        self.imagePickerController.takePicture()
+                    }, done: parent._selectedImage
                 )
+                imagePickerController.cameraOverlayView = cameraOverlayView
+                
+                self.cameraOverlayView = cameraOverlayView
+                
                 imagePickerController.cameraFlashMode = .off
                 imagePickerController.showsCameraControls = false
             }
@@ -96,12 +102,13 @@ public struct ImagePicker<T>: UIViewControllerRepresentable {
             
             let screenSize = UIScreen.main.bounds.size
             let scale = screenSize.width / selectedImage.size.width
-            let correctedImage = selectedImage.withCorrectedRotation(desiredAspect: .portrait)
-            let scaledImage = correctedImage.scaled(to: scale) // an image which is the same width as the screen; we pass the original when any edits are committed
+            let scaledImage = selectedImage.scaled(to: scale) // an image which is the same width as the screen; we pass the original when any edits are committed
             
             var editingOverlay: EditingOverlayView!
             
-            editingOverlay = EditingOverlayView(frame: picker.view.frame, item: parent._item, screenImage: scaledImage, originalImage: correctedImage, retake: {
+            editingOverlay = EditingOverlayView(frame: picker.view.frame, item: parent._item, screenImage: scaledImage, originalImage: selectedImage, retake: { [weak self] in
+                
+                self?.cameraOverlayView?.showButtons()
                 
                 UIView.animate(withDuration: 0.3) {
                     editingOverlay.alpha = 0
@@ -115,14 +122,15 @@ public struct ImagePicker<T>: UIViewControllerRepresentable {
             
             picker.cameraOverlayView?.addSubview(editingOverlay)
             
+            cameraOverlayView?.hideButtons()
             UIView.animate(withDuration: 0.3) {
                 editingOverlay.alpha = 1
             }
         }
         
         public func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            self.parent.selectedImage = .failure(.cancelled)
-            self.parent.item = nil
+            parent.selectedImage = .failure(.cancelled)
+            parent.item = nil
         }
         
         private func imageFinishedEditing(_ result: Result<PHImage, ImagePickerError>) {

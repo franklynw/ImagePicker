@@ -10,8 +10,9 @@ import SwiftUI
 
 final class EditingOverlayView: UIView {
     
-    private let diameter: CGFloat = 35
+    private let diameter: CGFloat = 40
     private let minBoxSize: CGFloat = 100
+    private let minVerticalPadding: CGFloat = 100
     private let aspectRatio: CGFloat
     
     private var originalBoxInsets = UIEdgeInsets(top: 40, left: 40, bottom: 40, right: 40)
@@ -28,6 +29,9 @@ final class EditingOverlayView: UIView {
     private var rotation: CGFloat = 0
     private var scale: CGFloat = 1
     private var translate: CGSize = .zero
+    
+    private var isAdjusting = false
+    private var isCorrecting = false
     
     private var rotateTransform: CGAffineTransform = .identity {
         didSet {
@@ -57,29 +61,6 @@ final class EditingOverlayView: UIView {
         aspectRatio = screenImage.size.height / screenImage.size.width
         
         super.init(frame: frame)
-        
-        let topObscureView = UIView()
-        topObscureView.translatesAutoresizingMaskIntoConstraints = false
-        
-        addSubview(topObscureView)
-        
-        topObscureView.backgroundColor = .black
-        topObscureView.translatesAutoresizingMaskIntoConstraints = false
-        topObscureView.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
-        topObscureView.centerXAnchor.constraint(equalTo: centerXAnchor).isActive = true
-        topObscureView.topAnchor.constraint(equalTo: topAnchor).isActive = true
-        topObscureView.heightAnchor.constraint(equalToConstant: 100).isActive = true
-        
-        let bottomObscureView = UIView()
-        bottomObscureView.translatesAutoresizingMaskIntoConstraints = false
-        
-        addSubview(bottomObscureView)
-        
-        bottomObscureView.backgroundColor = .black
-        bottomObscureView.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
-        bottomObscureView.centerXAnchor.constraint(equalTo: centerXAnchor).isActive = true
-        bottomObscureView.bottomAnchor.constraint(equalTo: bottomAnchor).isActive = true
-        bottomObscureView.heightAnchor.constraint(equalToConstant: 100).isActive = true
         
         
         let imageView = UIImageView(image: screenImage)
@@ -175,11 +156,40 @@ final class EditingOverlayView: UIView {
             $0.trailingAnchor.constraint(equalTo: interactionView.trailingAnchor, constant: -20).isActive = true
         }
         
-        let resetButton = Overlays.addOtherButton(to: interactionView, with: UIImage(systemName: "arrow.uturn.backward.circle.fill"), diameter: 60) { [weak self] in
+        let resetButton = Overlays.otherButton(with: UIImage(systemName: "arrow.uturn.backward.circle.fill"), diameter: 60) { [weak self] in
             self?.reset()
         }
-        resetButton.centerXAnchor.constraint(equalTo: interactionView.centerXAnchor).isActive = true
-        resetButton.bottomAnchor.constraint(equalTo: interactionView.bottomAnchor, constant: -20).isActive = true
+        
+        let buttonContainer = UIImageView(image: UIImage(systemName: "circle.fill"))
+        buttonContainer.translatesAutoresizingMaskIntoConstraints = false
+        buttonContainer.backgroundColor = .clear
+        buttonContainer.tintColor = .lightGray
+        buttonContainer.isUserInteractionEnabled = true
+        
+        let sizeBoxToImageButton = Overlays.button(with: UIImage(systemName: "rectangle.expand.vertical")) { [weak self] in
+            self?.sizeBoxToVisibleImage()
+        }
+        sizeBoxToImageButton.tintColor = .black
+        let imageConfig = UIImage.SymbolConfiguration(weight: .semibold)
+        sizeBoxToImageButton.setPreferredSymbolConfiguration(imageConfig, forImageIn: UIControl.State())
+        
+        buttonContainer.addSubview(sizeBoxToImageButton)
+        sizeBoxToImageButton.topAnchor.constraint(equalTo: buttonContainer.topAnchor, constant: 8).isActive = true
+        sizeBoxToImageButton.bottomAnchor.constraint(equalTo: buttonContainer.bottomAnchor, constant: -8).isActive = true
+        sizeBoxToImageButton.leadingAnchor.constraint(equalTo: buttonContainer.leadingAnchor, constant: 8).isActive = true
+        sizeBoxToImageButton.trailingAnchor.constraint(equalTo: buttonContainer.trailingAnchor, constant: -8).isActive = true
+        buttonContainer.widthAnchor.constraint(equalToConstant: 60).isActive = true
+        buttonContainer.heightAnchor.constraint(equalToConstant: 60).isActive = true
+        
+        let bottomButtons = UIStackView(arrangedSubviews: [resetButton, buttonContainer])
+        bottomButtons.translatesAutoresizingMaskIntoConstraints = false
+        bottomButtons.axis = .horizontal
+        bottomButtons.spacing = 20
+        interactionView.addSubview(bottomButtons)
+        
+        bottomButtons.centerXAnchor.constraint(equalTo: interactionView.centerXAnchor).isActive = true
+        bottomButtons.bottomAnchor.constraint(equalTo: interactionView.safeAreaLayoutGuide.bottomAnchor).isActive = true
+        
         
         let spinner = Spinner()
         addSubview(spinner)
@@ -220,6 +230,7 @@ final class EditingOverlayView: UIView {
                 return
             }
             
+            isAdjusting = true
             move = .image
             
         case .changed:
@@ -233,7 +244,7 @@ final class EditingOverlayView: UIView {
                 
                 let bottomRight = boxInsets.bottomRight(in: frame)
                 let x = max(min(location.x - offset.width, bottomRight.x - minBoxSize), 0)
-                let y = max(min(location.y - offset.height, bottomRight.y - minBoxSize), 0)
+                let y = max(min(location.y - offset.height, bottomRight.y - minBoxSize), minVerticalPadding)
                 
                 let topLeft = CGPoint(x: x, y: y)
                 
@@ -245,7 +256,7 @@ final class EditingOverlayView: UIView {
             case .bottomRight(let offset):
                 
                 let x = min(max(location.x - offset.width, boxInsets.left + minBoxSize), frame.width)
-                let y = min(max(location.y - offset.height, boxInsets.top + minBoxSize), frame.height)
+                let y = min(max(location.y - offset.height, boxInsets.top + minBoxSize), frame.height - minVerticalPadding)
                 
                 let bottomRight = CGPoint(x: x, y: y)
                 
@@ -267,7 +278,9 @@ final class EditingOverlayView: UIView {
         default:
             
             if case .image = move {
+                isAdjusting = false
                 self.translate = CGSize(width: translate.x + self.translate.width, height: translate.y + self.translate.height)
+                correctAfterUserAdjustments()
             }
             
             move = nil
@@ -281,11 +294,13 @@ final class EditingOverlayView: UIView {
         
         switch gestureRecognizer.state {
         case .began:
-            break
+            isAdjusting = true
         case .changed:
             rotateTransform = CGAffineTransform(rotationAngle: rotation + self.rotation)
         default:
+            isAdjusting = false
             self.rotation += rotation
+            correctAfterUserAdjustments()
         }
     }
     
@@ -296,12 +311,14 @@ final class EditingOverlayView: UIView {
         
         switch gestureRecognizer.state {
         case .began:
-            break
+            isAdjusting = true
         case .changed:
             let actualScale = self.scale * scale
             scaleTransform = CGAffineTransform(scaleX: actualScale, y: actualScale)
         default:
+            isAdjusting = false
             self.scale *= scale
+            correctAfterUserAdjustments()
         }
     }
     
@@ -334,6 +351,81 @@ final class EditingOverlayView: UIView {
     
     private func transform() {
         imageView.transform = rotateTransform.concatenating(scaleTransform).concatenating(translateTransform)
+    }
+    
+    private func correctAfterUserAdjustments() {
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            if !self.isAdjusting {
+                self.doCorrections()
+            }
+        }
+    }
+    
+    private func doCorrections() {
+        
+        guard !isCorrecting else {
+            return
+        }
+        
+        let imageFrame = imageView.frame
+        
+        guard imageFrame.width < minBoxSize ||
+          imageFrame.height < minBoxSize ||
+          imageFrame.maxX < minBoxSize ||
+          imageFrame.minX > frame.width - minBoxSize ||
+          imageFrame.maxY < minVerticalPadding + minBoxSize ||
+          imageFrame.minY > frame.height - minVerticalPadding - minBoxSize else {
+            return
+        }
+        
+        isCorrecting = true
+        
+        let originalImageHeight = frame.width * aspectRatio
+        self.scale = max(max(minBoxSize / frame.width, minBoxSize / originalImageHeight), self.scale)
+        
+        var translateX = max(minBoxSize - imageFrame.maxX, 0)
+        if translateX == 0 {
+            translateX = min(frame.width - minBoxSize - imageFrame.minX, 0)
+        }
+        var translateY = max(minVerticalPadding + minBoxSize - imageFrame.maxY, 0)
+        if translateY == 0 {
+            translateY = min(frame.height - minVerticalPadding - minBoxSize - imageFrame.minY, 0)
+        }
+        translate = CGSize(width: translate.width + translateX, height: translate.height + translateY)
+        
+        UIView.animate(withDuration: 0.4) {
+            self.translateTransform = CGAffineTransform(translationX: self.translate.width, y: self.translate.height)
+            self.scaleTransform = CGAffineTransform(scaleX: self.scale, y: self.scale)
+        } completion: { _ in
+            self.isCorrecting = false
+        }
+    }
+    
+    private func sizeBoxToVisibleImage() {
+        
+        let imageFrame = imageView.frame
+        let top = max(imageFrame.origin.y, minVerticalPadding)
+        let left = max(imageFrame.origin.x, 0)
+        let bottom = max(frame.maxY - imageFrame.maxY, minVerticalPadding)
+        let right = max(frame.maxX - imageFrame.maxX, 0)
+        
+        boxInsets = .init(top: top, left: left, bottom: bottom, right: right)
+        
+        let topLeft = boxInsets.topLeft
+        let bottomRight = boxInsets.bottomRight(in: frame)
+        
+        UIView.transition(with: self, duration: 0.5, options: .transitionCrossDissolve) {
+            self.maskLayer.topLeft = topLeft
+            self.boxLayer.topLeft = topLeft
+            self.maskLayer.bottomRight = bottomRight
+            self.boxLayer.bottomRight = bottomRight
+        }
+        
+        UIView.animate(withDuration: 0.4, delay: 0.1) {
+            self.topLeftCircle.center = topLeft
+            self.bottomRightCircle.center = bottomRight
+        }
     }
     
     private func reset() {
